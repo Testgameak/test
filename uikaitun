@@ -1,306 +1,412 @@
--- Tạo giao diện chính
-local ScreenGui = Instance.new('ScreenGui')
-local TitleLabel = Instance.new('TextLabel')
+-- ============================================
+-- SIGMA HUB - FULL CODE (MOBILE + SEEDS)
+-- ============================================
+
+local ScreenGui   = Instance.new('ScreenGui')
+local TweenService = game:GetService("TweenService")
+local Players      = game:GetService("Players")
+local LocalPlayer  = Players.LocalPlayer
+
+ScreenGui.Name            = "Sigma Hub"
+ScreenGui.Parent          = game:GetService('CoreGui')
+ScreenGui.Enabled         = true
+ScreenGui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
+ScreenGui.IgnoreGuiInset  = true
+
+-- ============================================
+-- NÚT TOGGLE
+-- ============================================
 local ToggleFrame = Instance.new("Frame")
+ToggleFrame.Name                 = "ToggleContainer"
+ToggleFrame.Parent               = ScreenGui
+ToggleFrame.AnchorPoint          = Vector2.new(1, 0)
+ToggleFrame.Position             = UDim2.new(1, -10, 0, 10)
+ToggleFrame.Size                 = UDim2.new(0, 44, 0, 44)
+ToggleFrame.BackgroundColor3     = Color3.fromRGB(20, 20, 20)
+ToggleFrame.BackgroundTransparency = 0.1
+ToggleFrame.BorderSizePixel      = 0
+ToggleFrame.ClipsDescendants     = true
+ToggleFrame.ZIndex               = 10
+local tc = Instance.new("UICorner")
+tc.CornerRadius = UDim.new(1, 0)
+tc.Parent = ToggleFrame
 local ToggleStroke = Instance.new("UIStroke")
-local ToggleButton = Instance.new("ImageButton")
-local ToggleIcon = Instance.new("TextLabel")
-
-ScreenGui.Name = "Sigma Hub"
-ScreenGui.Parent = game:GetService('CoreGui')
-ScreenGui.Enabled = true
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.IgnoreGuiInset = true
-
--- Tiêu đề
-TitleLabel.Name = 'NameHub'
-TitleLabel.Parent = ScreenGui
-TitleLabel.AnchorPoint = Vector2.new(0.5, 0)
-TitleLabel.Position = UDim2.new(0.5, 0, 0.02, 0)
-TitleLabel.Size = UDim2.new(0, 300, 0, 50)
-TitleLabel.BackgroundTransparency = 1
-TitleLabel.Font = Enum.Font.FredokaOne
-TitleLabel.Text = "Sigma Hub"
-TitleLabel.TextColor3 = Color3.fromRGB(170, 85, 255)
-TitleLabel.TextSize = 40
-local TitleStroke = Instance.new("UIStroke")
-TitleStroke.Parent = TitleLabel
-TitleStroke.Color = Color3.fromRGB(0, 0, 0)
-TitleStroke.Thickness = 1
-
--- Nút Toggle
-ToggleFrame.Name = 'ToggleContainer'
-ToggleFrame.Parent = ScreenGui
-ToggleFrame.AnchorPoint = Vector2.new(1, 0)
-ToggleFrame.Position = UDim2.new(1, -20, 0, 20)
-ToggleFrame.Size = UDim2.new(0, 50, 0, 50)
-ToggleFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-ToggleFrame.BackgroundTransparency = 0.2
-ToggleFrame.BorderSizePixel = 0
-ToggleFrame.ClipsDescendants = true
-local ToggleCorner = Instance.new('UICorner')
-ToggleCorner.CornerRadius = UDim.new(1, 0)
-ToggleCorner.Parent = ToggleFrame
-ToggleStroke.Parent = ToggleFrame
-ToggleStroke.Color = Color3.fromRGB(9, 255, 248)
+ToggleStroke.Parent    = ToggleFrame
+ToggleStroke.Color     = Color3.fromRGB(9, 255, 248)
 ToggleStroke.Thickness = 2
 
-ToggleButton.Name = 'ToggleButton'
-ToggleButton.Parent = ToggleFrame
-ToggleButton.AnchorPoint = Vector2.new(0.5, 0.5)
-ToggleButton.Position = UDim2.new(0.5, 0, 0.5, 0)
-ToggleButton.Size = UDim2.new(1, 0, 1, 0)
+local ToggleButton = Instance.new("ImageButton")
+ToggleButton.Parent               = ToggleFrame
+ToggleButton.AnchorPoint          = Vector2.new(0.5, 0.5)
+ToggleButton.Position             = UDim2.new(0.5, 0, 0.5, 0)
+ToggleButton.Size                 = UDim2.new(1, 0, 1, 0)
 ToggleButton.BackgroundTransparency = 1
-ToggleButton.BorderSizePixel = 0
+ToggleButton.ZIndex               = 11
 
-ToggleIcon.Name = "ToggleIcon"
-ToggleIcon.Parent = ToggleFrame
-ToggleIcon.AnchorPoint = Vector2.new(0.5, 0.5)
-ToggleIcon.Position = UDim2.new(0.5, 0, 0.5, 0)
-ToggleIcon.Size = UDim2.new(0.7, 0, 0.7, 0)
+local ToggleIcon = Instance.new("TextLabel")
+ToggleIcon.Parent               = ToggleFrame
+ToggleIcon.AnchorPoint          = Vector2.new(0.5, 0.5)
+ToggleIcon.Position             = UDim2.new(0.5, 0, 0.5, 0)
+ToggleIcon.Size                 = UDim2.new(0.8, 0, 0.8, 0)
 ToggleIcon.BackgroundTransparency = 1
-ToggleIcon.Font = Enum.Font.GothamBold
-ToggleIcon.Text = "HIDE"
-ToggleIcon.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleIcon.TextScaled = true
+ToggleIcon.Font                 = Enum.Font.GothamBold
+ToggleIcon.Text                 = "☰"
+ToggleIcon.TextColor3           = Color3.fromRGB(9, 255, 248)
+ToggleIcon.TextScaled           = true
+ToggleIcon.ZIndex               = 12
 
--- Main Info Frame
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Parent = ScreenGui
-MainFrame.AnchorPoint = Vector2.new(0.5, 0)
-MainFrame.Position = UDim2.new(0.5, 0, 0.08, 0)
-MainFrame.Size = UDim2.new(0, 320, 0, 520)
-MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-MainFrame.BackgroundTransparency = 0.2
-MainFrame.BorderSizePixel = 0
-local MainCorner = Instance.new("UICorner")
-MainCorner.CornerRadius = UDim.new(0, 10)
-MainCorner.Parent = MainFrame
-local MainStroke = Instance.new("UIStroke")
-MainStroke.Parent = MainFrame
-MainStroke.Color = Color3.fromRGB(9, 255, 248)
-MainStroke.Thickness = 1.5
+-- ============================================
+-- MAIN PANEL
+-- ============================================
+local Panel = Instance.new("Frame")
+Panel.Name                   = "MainPanel"
+Panel.Parent                 = ScreenGui
+Panel.AnchorPoint            = Vector2.new(0, 0)
+Panel.Position               = UDim2.new(0, -200, 0, 0)
+Panel.Size                   = UDim2.new(0, 200, 1, 0)
+Panel.BackgroundColor3       = Color3.fromRGB(10, 10, 10)
+Panel.BackgroundTransparency = 0.05
+Panel.BorderSizePixel        = 0
+Panel.ClipsDescendants       = true
+Panel.ZIndex                 = 5
 
-local ScrollFrame = Instance.new("ScrollingFrame")
-ScrollFrame.Parent = MainFrame
-ScrollFrame.Size = UDim2.new(1, 0, 1, 0)
-ScrollFrame.Position = UDim2.new(0, 0, 0, 0)
-ScrollFrame.BackgroundTransparency = 1
-ScrollFrame.BorderSizePixel = 0
-ScrollFrame.ScrollBarThickness = 3
-ScrollFrame.ScrollBarImageColor3 = Color3.fromRGB(9, 255, 248)
-ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-ScrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+local PanelStroke = Instance.new("UIStroke")
+PanelStroke.Parent    = Panel
+PanelStroke.Color     = Color3.fromRGB(9, 255, 248)
+PanelStroke.Thickness = 1
+
+-- Header
+local PanelHeader = Instance.new("Frame")
+PanelHeader.Parent           = Panel
+PanelHeader.Size             = UDim2.new(1, 0, 0, 44)
+PanelHeader.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+PanelHeader.BorderSizePixel  = 0
+PanelHeader.ZIndex           = 6
+
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Parent               = PanelHeader
+TitleLabel.AnchorPoint          = Vector2.new(0.5, 0.5)
+TitleLabel.Position             = UDim2.new(0.5, 0, 0.5, 0)
+TitleLabel.Size                 = UDim2.new(1, -10, 1, 0)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Font                 = Enum.Font.FredokaOne
+TitleLabel.Text                 = "Sigma Hub"
+TitleLabel.TextColor3           = Color3.fromRGB(170, 85, 255)
+TitleLabel.TextSize             = 20
+TitleLabel.ZIndex               = 7
+local TitleStroke = Instance.new("UIStroke")
+TitleStroke.Parent    = TitleLabel
+TitleStroke.Color     = Color3.fromRGB(0, 0, 0)
+TitleStroke.Thickness = 0.8
+
+-- ScrollingFrame
+local Scroll = Instance.new("ScrollingFrame")
+Scroll.Parent                = Panel
+Scroll.Position              = UDim2.new(0, 0, 0, 44)
+Scroll.Size                  = UDim2.new(1, 0, 1, -44)
+Scroll.BackgroundTransparency = 1
+Scroll.BorderSizePixel       = 0
+Scroll.ScrollBarThickness    = 2
+Scroll.ScrollBarImageColor3  = Color3.fromRGB(9, 255, 248)
+Scroll.AutomaticCanvasSize   = Enum.AutomaticSize.Y
+Scroll.CanvasSize            = UDim2.new(0, 0, 0, 0)
+Scroll.ZIndex                = 6
 
 local ListLayout = Instance.new("UIListLayout")
-ListLayout.Parent = ScrollFrame
-ListLayout.Padding = UDim.new(0, 2)
-ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+ListLayout.Parent      = Scroll
+ListLayout.Padding     = UDim.new(0, 1)
+ListLayout.SortOrder   = Enum.SortOrder.LayoutOrder
 
-local Padding = Instance.new("UIPadding")
-Padding.Parent = ScrollFrame
-Padding.PaddingLeft = UDim.new(0, 10)
-Padding.PaddingRight = UDim.new(0, 10)
-Padding.PaddingTop = UDim.new(0, 8)
-Padding.PaddingBottom = UDim.new(0, 8)
+local Pad = Instance.new("UIPadding")
+Pad.Parent        = Scroll
+Pad.PaddingLeft   = UDim.new(0, 6)
+Pad.PaddingRight  = UDim.new(0, 4)
+Pad.PaddingTop    = UDim.new(0, 4)
+Pad.PaddingBottom = UDim.new(0, 6)
 
--- Màu sắc
-local COLOR_HEADER = Color3.fromRGB(0, 255, 140)
-local COLOR_KEY = Color3.fromRGB(200, 200, 200)
-local COLOR_VALUE = Color3.fromRGB(255, 255, 255)
-local COLOR_SUB = Color3.fromRGB(150, 255, 180)
-
--- Hàm tạo label section header
-local function CreateHeader(text, order)
+-- ============================================
+-- HELPERS
+-- ============================================
+local function MakeHeader(text, order)
     local f = Instance.new("Frame")
-    f.Parent = ScrollFrame
-    f.Size = UDim2.new(1, 0, 0, 24)
+    f.Parent               = Scroll
+    f.Size                 = UDim2.new(1, 0, 0, 20)
     f.BackgroundTransparency = 1
-    f.LayoutOrder = order
-
-    local left = Instance.new("Frame")
-    left.Parent = f
-    left.Size = UDim2.new(0.2, 0, 0, 1)
-    left.Position = UDim2.new(0, 0, 0.5, 0)
-    left.BackgroundColor3 = COLOR_HEADER
-    left.BorderSizePixel = 0
-
+    f.LayoutOrder          = order
+    f.ZIndex               = 6
     local lbl = Instance.new("TextLabel")
-    lbl.Parent = f
-    lbl.AnchorPoint = Vector2.new(0.5, 0.5)
-    lbl.Position = UDim2.new(0.5, 0, 0.5, 0)
-    lbl.Size = UDim2.new(0.5, 0, 1, 0)
+    lbl.Parent               = f
+    lbl.Size                 = UDim2.new(1, 0, 1, 0)
     lbl.BackgroundTransparency = 1
-    lbl.Font = Enum.Font.GothamBold
-    lbl.Text = "——  " .. text .. "  ——"
-    lbl.TextColor3 = COLOR_HEADER
-    lbl.TextSize = 13
-    lbl.TextScaled = false
-
-    local right = Instance.new("Frame")
-    right.Parent = f
-    right.Size = UDim2.new(0.2, 0, 0, 1)
-    right.Position = UDim2.new(0.8, 0, 0.5, 0)
-    right.BackgroundColor3 = COLOR_HEADER
-    right.BorderSizePixel = 0
-
+    lbl.Font                 = Enum.Font.GothamBold
+    lbl.Text                 = "— " .. text .. " —"
+    lbl.TextColor3           = Color3.fromRGB(0, 220, 130)
+    lbl.TextSize             = 11
+    lbl.TextXAlignment       = Enum.TextXAlignment.Center
+    lbl.ZIndex               = 7
     return f
 end
 
--- Hàm tạo dòng text key: value
 local LabelMap = {}
-local function CreateRow(key, defaultVal, order, isSub)
+local function MakeRow(key, default, order, isSub)
     local f = Instance.new("Frame")
-    f.Parent = ScrollFrame
-    f.Size = UDim2.new(1, 0, 0, 20)
+    f.Parent               = Scroll
+    f.Size                 = UDim2.new(1, 0, 0, 18)
     f.BackgroundTransparency = 1
-    f.LayoutOrder = order
-
+    f.LayoutOrder          = order
+    f.ZIndex               = 6
     local lbl = Instance.new("TextLabel")
-    lbl.Parent = f
-    lbl.Size = UDim2.new(1, 0, 1, 0)
+    lbl.Parent               = f
+    lbl.Size                 = UDim2.new(1, 0, 1, 0)
     lbl.BackgroundTransparency = 1
-    lbl.Font = Enum.Font.Gotham
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.TextSize = 13
-    lbl.RichText = true
-    lbl.Text = (isSub and "  <font color='#96ffb4'>• " .. key .. ":</font> " or "<font color='#c8c8c8'>" .. key .. ":</font> ") .. "<font color='#ffffff'>" .. defaultVal .. "</font>"
-    lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-
-    LabelMap[key] = {label = lbl, key = key, isSub = isSub}
+    lbl.Font                 = Enum.Font.Gotham
+    lbl.TextXAlignment       = Enum.TextXAlignment.Left
+    lbl.TextSize             = 11
+    lbl.RichText             = true
+    lbl.ZIndex               = 7
+    local prefix = isSub
+        and "  <font color='#80ffb0'>· " .. key .. ":</font> "
+        or  "<font color='#aaaaaa'>" .. key .. ":</font> "
+    lbl.Text = prefix .. "<font color='#ffffff'>" .. default .. "</font>"
+    LabelMap[key] = { lbl = lbl, prefix = prefix }
     return f
 end
 
--- Hàm cập nhật giá trị
-local TweenService = game:GetService("TweenService")
+-- ============================================
+-- LAYOUT
+-- ============================================
+MakeHeader("PLAYER",          1)
+MakeRow("Sheckles",  "$0",    2)
+MakeRow("Fruit",  "0 / 100",  3)
+MakeRow("Pets",   "0 / 0",    4)
+MakeRow("Seeds",  "0 total",  5)
+
+MakeRow("Carrot",          "0",  6,  true)
+MakeRow("Strawberry",      "0",  7,  true)
+MakeRow("Blueberry",       "0",  8,  true)
+MakeRow("Tulip",           "0",  9,  true)
+MakeRow("Tomato",          "0",  10, true)
+MakeRow("Apple",           "0",  11, true)
+MakeRow("Bamboo",          "0",  12, true)
+MakeRow("Corn",            "0",  13, true)
+MakeRow("Cactus",          "0",  14, true)
+MakeRow("Pineapple",       "0",  15, true)
+MakeRow("Mushroom",        "0",  16, true)
+MakeRow("Green Bean",      "0",  17, true)
+MakeRow("Banana",          "0",  18, true)
+MakeRow("Grape",           "0",  19, true)
+MakeRow("Coconut",         "0",  20, true)
+MakeRow("Mango",           "0",  21, true)
+MakeRow("Dragon Fruit",    "0",  22, true)
+MakeRow("Acorn",           "0",  23, true)
+MakeRow("Cherry",          "0",  24, true)
+MakeRow("Sunflower",       "0",  25, true)
+MakeRow("Venus Fly Trap",  "0",  26, true)
+MakeRow("Pomegranate",     "0",  27, true)
+MakeRow("Poison Apple",    "0",  28, true)
+MakeRow("Moon Bloom",      "0",  29, true)
+MakeRow("Dragon's Breath", "0",  30, true)
+MakeRow("Ghost Pepper",    "0",  31, true)
+MakeRow("Poison Ivy",      "0",  32, true)
+MakeRow("Baby Cactus",     "0",  33, true)
+MakeRow("Glow Mushroom",   "0",  34, true)
+MakeRow("Romanesco",       "0",  35, true)
+MakeRow("Horned Melon",    "0",  36, true)
+
+MakeRow("Plot",        "0",      37)
+
+MakeHeader("GARDEN",          38)
+MakeRow("Plants",   "0 / 200",  39)
+MakeRow("Sprinklers",  "0",     40)
+MakeRow("Decaying",    "0",     41)
+
+MakeHeader("SESSION",         42)
+MakeRow("Uptime",  "00:00:00", 43)
+MakeRow("Earned",     "$0",    44)
+MakeRow("Rate",      "$0/s",   45)
+MakeRow("Harvested",   "0",    46)
+MakeRow("Planted",     "0",    47)
+MakeRow("Sold",   "0 times",   48)
+MakeRow("Mails",       "0",    49)
+MakeRow("Pets Bought", "0",    50)
+MakeRow("Seed Packs",  "0",    51)
+MakeRow("Shovels",     "0",    52)
+
+MakeHeader("STATUS",          53)
+MakeRow("Last",       "N/A",   54)
+
+-- ============================================
+-- HÀM CẬP NHẬT GIÁ TRỊ
+-- ============================================
 local function SetValue(key, value)
     local entry = LabelMap[key]
     if not entry then return end
-    local lbl = entry.label
-    local newText = (entry.isSub and "  <font color='#96ffb4'>• " .. key .. ":</font> " or "<font color='#c8c8c8'>" .. key .. ":</font> ") .. "<font color='#ffffff'>" .. tostring(value) .. "</font>"
+    local lbl     = entry.lbl
+    local newText = entry.prefix .. "<font color='#ffffff'>" .. tostring(value) .. "</font>"
     if lbl.Text == newText then return end
-    local t1 = TweenService:Create(lbl, TweenInfo.new(0.15), {TextTransparency = 1})
+    local t1 = TweenService:Create(lbl, TweenInfo.new(0.1), {TextTransparency = 1})
     t1:Play()
     t1.Completed:Wait()
     lbl.Text = newText
-    local t2 = TweenService:Create(lbl, TweenInfo.new(0.15), {TextTransparency = 0})
-    t2:Play()
+    TweenService:Create(lbl, TweenInfo.new(0.15), {TextTransparency = 0}):Play()
 end
 
--- ==== BUILD UI LAYOUT ====
--- PLAYER
-CreateHeader("PLAYER", 1)
-CreateRow("Sheckles",   "$0",      2)
-CreateRow("Fruit",      "0 / 100", 3)
-CreateRow("Pets",       "0 / 0",   4)
-CreateRow("Seeds",      "0 total", 5)
-CreateRow("Carrot",     "0",       6,  true)
-CreateRow("Bamboo",     "0",       7,  true)
-CreateRow("Tomato",     "0",       8,  true)
-CreateRow("Tulip",      "0",       9,  true)
-CreateRow("Blueberry",  "0",       10, true)
-CreateRow("Cactus",     "0",       11, true)
-CreateRow("Plot",       "0",       12)
+-- ============================================
+-- SEEDS - DANH SÁCH ĐẦY ĐỦ
+-- ============================================
+local SEED_NAMES = {
+    "Carrot Seed",          "Strawberry Seed",      "Blueberry Seed",
+    "Tulip Seed",           "Tomato Seed",           "Apple Seed",
+    "Bamboo Seed",          "Corn Seed",             "Cactus Seed",
+    "Pineapple Seed",       "Mushroom Seed",         "Green Bean Seed",
+    "Banana Seed",          "Grape Seed",            "Coconut Seed",
+    "Mango Seed",           "Dragon Fruit Seed",     "Acorn Seed",
+    "Cherry Seed",          "Sunflower Seed",        "Venus Fly Trap Seed",
+    "Pomegranate Seed",     "Poison Apple Seed",     "Moon Bloom Seed",
+    "Dragon's Breath Seed", "Ghost Pepper Seed",     "Poison Ivy Seed",
+    "Baby Cactus Seed",     "Glow Mushroom Seed",    "Romanesco Seed",
+    "Horned Melon Seed",
+}
 
--- GARDEN
-CreateHeader("GARDEN", 13)
-CreateRow("Plants",     "0 / 200", 14)
-CreateRow("Sprinklers", "0",       15)
-CreateRow("Decaying",   "0",       16)
+local SEED_DISPLAY = {
+    ["Carrot Seed"]           = "Carrot",
+    ["Strawberry Seed"]       = "Strawberry",
+    ["Blueberry Seed"]        = "Blueberry",
+    ["Tulip Seed"]            = "Tulip",
+    ["Tomato Seed"]           = "Tomato",
+    ["Apple Seed"]            = "Apple",
+    ["Bamboo Seed"]           = "Bamboo",
+    ["Corn Seed"]             = "Corn",
+    ["Cactus Seed"]           = "Cactus",
+    ["Pineapple Seed"]        = "Pineapple",
+    ["Mushroom Seed"]         = "Mushroom",
+    ["Green Bean Seed"]       = "Green Bean",
+    ["Banana Seed"]           = "Banana",
+    ["Grape Seed"]            = "Grape",
+    ["Coconut Seed"]          = "Coconut",
+    ["Mango Seed"]            = "Mango",
+    ["Dragon Fruit Seed"]     = "Dragon Fruit",
+    ["Acorn Seed"]            = "Acorn",
+    ["Cherry Seed"]           = "Cherry",
+    ["Sunflower Seed"]        = "Sunflower",
+    ["Venus Fly Trap Seed"]   = "Venus Fly Trap",
+    ["Pomegranate Seed"]      = "Pomegranate",
+    ["Poison Apple Seed"]     = "Poison Apple",
+    ["Moon Bloom Seed"]       = "Moon Bloom",
+    ["Dragon's Breath Seed"]  = "Dragon's Breath",
+    ["Ghost Pepper Seed"]     = "Ghost Pepper",
+    ["Poison Ivy Seed"]       = "Poison Ivy",
+    ["Baby Cactus Seed"]      = "Baby Cactus",
+    ["Glow Mushroom Seed"]    = "Glow Mushroom",
+    ["Romanesco Seed"]        = "Romanesco",
+    ["Horned Melon Seed"]     = "Horned Melon",
+}
 
--- SESSION
-CreateHeader("SESSION", 17)
-CreateRow("Uptime",     "00:00:00",18)
-CreateRow("Earned",     "$0",      19)
-CreateRow("Rate",       "$0/s",    20)
-CreateRow("Harvested",  "0",       21)
-CreateRow("Planted",    "0",       22)
-CreateRow("Sold",       "0 times", 23)
-CreateRow("Mails",      "0",       24)
-CreateRow("Pets Bought","0",       25)
-CreateRow("Seed Packs", "0",       26)
-CreateRow("Shovels",    "0",       27)
-
--- STATUS
-CreateHeader("STATUS", 28)
-CreateRow("Last",       "N/A",     29)
-
--- ==== BLUR SYSTEM ====
-local BlurFrame = Instance.new('Frame')
-BlurFrame.Parent = ScreenGui
-BlurFrame.BackgroundColor3 = Color3.fromRGB(0,0,0)
-BlurFrame.BackgroundTransparency = 1
-BlurFrame.BorderSizePixel = 0
-BlurFrame.Size = UDim2.new(1,0,1,0)
-BlurFrame.ZIndex = 0
-
-local BlurEffect = nil
-local function SetBlur(intensity)
-    intensity = math.clamp(intensity, 0, 0.95)
-    local ts = game:GetService('TweenService')
-    local ti = TweenInfo.new(0.3, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out)
-    ts:Create(BlurFrame, ti, {BackgroundTransparency = 1 - intensity}):Play()
-    if not BlurEffect then
-        BlurEffect = Instance.new("BlurEffect")
-        BlurEffect.Name = 'CustomBlur'
-        BlurEffect.Parent = game.Lighting
-    end
-    ts:Create(BlurEffect, ti, {Size = intensity * 30}):Play()
-end
-
--- ==== TOGGLE UI ====
-local UIVisible = true
-local AllElements = {TitleLabel, MainFrame}
-
-local function ToggleUI(state)
-    UIVisible = (state ~= nil) and state or (not UIVisible)
-    local ts = game:GetService("TweenService")
-    local ti = TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
-
-    if UIVisible then
-        ToggleIcon.Text = "HIDE"
-        for _, el in pairs(AllElements) do
-            el.Visible = true
-            ts:Create(el, ti, {BackgroundTransparency = el == TitleLabel and 1 or 0.2}):Play()
+-- ============================================
+-- LOGIC ĐẾM SEED TỪ KHO ĐỒ
+-- ============================================
+local function CountSeed(seedName)
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    local char     = LocalPlayer.Character
+    local count    = 0
+    if backpack then
+        for _, item in pairs(backpack:GetChildren()) do
+            if item.Name == seedName then count += 1 end
         end
-        TitleLabel.TextTransparency = 1
-        ts:Create(TitleLabel, ti, {TextTransparency = 0}):Play()
-        SetBlur(0.3)
-    else
-        ToggleIcon.Text = "😶"
-        ts:Create(TitleLabel, ti, {TextTransparency = 1}):Play()
-        ts:Create(MainFrame, ti, {BackgroundTransparency = 1}):Play()
-        task.delay(0.4, function()
-            for _, el in pairs(AllElements) do el.Visible = false end
-        end)
-        SetBlur(0)
     end
+    if char then
+        for _, item in pairs(char:GetChildren()) do
+            if item.Name == seedName then count += 1 end
+        end
+    end
+    return count
 end
 
-ToggleButton.MouseButton1Click:Connect(function() ToggleUI() end)
+local function UpdateAllSeeds()
+    local total = 0
+    for _, seedName in pairs(SEED_NAMES) do
+        local n = CountSeed(seedName)
+        total += n
+        local key = SEED_DISPLAY[seedName]
+        if key then SetValue(key, tostring(n)) end
+    end
+    SetValue("Seeds", total .. " total")
+end
+
+local function WatchContainer(container)
+    if not container then return end
+    container.ChildAdded:Connect(function(item)
+        if SEED_DISPLAY[item.Name] then
+            task.wait(0.05)
+            UpdateAllSeeds()
+        end
+    end)
+    container.ChildRemoved:Connect(function(item)
+        if SEED_DISPLAY[item.Name] then
+            task.wait(0.05)
+            UpdateAllSeeds()
+        end
+    end)
+end
+
+local function WatchBackpack()
+    WatchContainer(LocalPlayer:FindFirstChild("Backpack"))
+end
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    WatchContainer(char)
+    WatchBackpack()
+    UpdateAllSeeds()
+end)
+
+WatchBackpack()
+UpdateAllSeeds()
+
+task.spawn(function()
+    while true do
+        task.wait(3)
+        UpdateAllSeeds()
+    end
+end)
+
+-- ============================================
+-- TOGGLE PANEL (slide từ trái)
+-- ============================================
+local PanelOpen = false
+
+local function TogglePanel()
+    PanelOpen = not PanelOpen
+    local targetX     = PanelOpen and 0 or -200
+    local targetIcon  = PanelOpen and "✕" or "☰"
+    local targetColor = PanelOpen
+        and Color3.fromRGB(255, 80, 80)
+        or  Color3.fromRGB(9, 255, 248)
+
+    TweenService:Create(Panel,
+        TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+        {Position = UDim2.new(0, targetX, 0, 0)}):Play()
+
+    ToggleIcon.Text       = targetIcon
+    ToggleIcon.TextColor3 = targetColor
+    TweenService:Create(ToggleStroke,
+        TweenInfo.new(0.2), {Color = targetColor}):Play()
+end
+
+ToggleButton.MouseButton1Click:Connect(TogglePanel)
 
 ToggleButton.MouseEnter:Connect(function()
-    local ts = game:GetService('TweenService')
-    ts:Create(ToggleFrame, TweenInfo.new(0.3), {Size = UDim2.new(0,55,0,55)}):Play()
-    ts:Create(ToggleStroke, TweenInfo.new(0.3), {Color = Color3.fromRGB(0,255,255), Thickness = 3}):Play()
+    TweenService:Create(ToggleFrame,
+        TweenInfo.new(0.2), {Size = UDim2.new(0, 48, 0, 48)}):Play()
 end)
 ToggleButton.MouseLeave:Connect(function()
-    local ts = game:GetService('TweenService')
-    ts:Create(ToggleFrame, TweenInfo.new(0.3), {Size = UDim2.new(0,50,0,50)}):Play()
-    ts:Create(ToggleStroke, TweenInfo.new(0.3), {Color = Color3.fromRGB(9,255,248), Thickness = 2}):Play()
+    TweenService:Create(ToggleFrame,
+        TweenInfo.new(0.2), {Size = UDim2.new(0, 44, 0, 44)}):Play()
 end)
 
--- ==== AUTO UPDATE (kết nối game) ====
--- Gọi SetValue để cập nhật bất kỳ lúc nào, ví dụ:
--- SetValue("Sheckles", "$719.7K")
--- SetValue("Last", "Harvested 13 (0s ago)")
-
--- Hiển thị lúc đầu
-ToggleUI(true)
-
--- Export
+-- ============================================
+-- EXPORT
+-- ============================================
 return {
     SetValue = SetValue,
-    ToggleUI = ToggleUI,
+    Toggle   = TogglePanel,
 }
