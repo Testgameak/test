@@ -365,7 +365,38 @@ function Modules.shouldHarvestModel(model)
     return true
 end
 
-local processingPrompts = {}
+-- ========== HARVEST + SELL TÍCH HỢP (EVENT-DRIVEN, CHỐNG LAG) ==========
+-- Thay vì quét lại TOÀN BỘ danh sách HarvestPrompt mỗi 0.05s (bản cũ),
+-- giờ mỗi prompt được "hook" 1 lần và tự bắn khi nó Enabled = true.
+-- Dùng weak table để prompt bị Destroy (cây hái xong/mất) tự dọn rác, tránh leak.
+local processingPrompts = setmetatable({}, { __mode = "k" })
+local hookedPrompts      = setmetatable({}, { __mode = "k" })
+
+-- Cooldown chống spam remote SellAll (bắn liên tục dễ làm server/network giật)
+local _lastSellFire = 0
+local function fireSellAll(reason)
+    local now = tick()
+    local cd  = Config.Settings["Sell Delay"] or 0.3
+    if now - _lastSellFire < cd then return end
+    _lastSellFire = now
+    logAction("Auto Sell", reason)
+    Networking.NPCS.SellAll:Fire()
+end
+
+-- Kiểm tra túi đầy -> bán. Được TÍCH HỢP gọi thẳng sau mỗi lần hái thành công
+-- thay vì chạy 1 loop riêng cứ 0.2s lại đọc UI text (tốn CPU vô ích).
+local function checkSellWhenFull()
+    if not Config.Sell["When Full"] then return end
+    local ok, text = pcall(function()
+        return LP.PlayerGui.BackpackGui.Backpack.Inventory.FruitInventory.Text
+    end)
+    if not ok or not text then return end
+    local current, max = text:match("(%d+)/(%d+)")
+    if current and max and tonumber(current) >= tonumber(max) then
+        fireSellAll("Backpack full")
+    end
+end
+
 function Modules.harvestPrompt(prompt)
     if processingPrompts[prompt] then return end
     local model = Modules.getModel(prompt)
@@ -380,120 +411,113 @@ function Modules.harvestPrompt(prompt)
     elseif Config.Harvest.Fruit[plantName] then
         shouldHarvest = true
     end
-
     if shouldHarvest then shouldHarvest = Modules.shouldHarvestModel(model) end
+    if not (plantId and shouldHarvest) then return end
 
-    if plantId and shouldHarvest then
-        processingPrompts[prompt] = true
-        task.spawn(function()
-            local oldDist = prompt.MaxActivationDistance
-            prompt.MaxActivationDistance = math.huge
-            prompt:InputHoldBegin()
-            task.wait(0.01)
-            prompt:InputHoldEnd()
-            -- Remote đúng từ GaG2
-            Networking.Garden.CollectFruit:Fire(plantId, fruitId)
-            prompt.MaxActivationDistance = oldDist
-            task.wait(0.2)
-            processingPrompts[prompt] = nil
-        end)
-    end
+    processingPrompts[prompt] = true
+    local oldDist = prompt.MaxActivationDistance
+    prompt.MaxActivationDistance = math.huge
+    prompt:InputHoldBegin()
+    task.wait(0.01)
+    prompt:InputHoldEnd()
+    -- Remote đúng từ GaG2
+    Networking.Garden.CollectFruit:Fire(plantId, fruitId)
+    prompt.MaxActivationDistance = oldDist
+    task.wait(0.05)
+    processingPrompts[prompt] = nil
+
+    -- TÍCH HỢP: hái xong thì kiểm tra túi đầy ngay, không cần đợi loop riêng
+    task.spawn(checkSellWhenFull)
 end
 
-function Modules.harvestLoop()
-    -- Hook event khi prompt mới xuất hiện → harvest ngay, không cần polling liên tục
-    CollectionService:GetInstanceAddedSignal("HarvestPrompt"):Connect(function(prompt)
+-- Hook 1 lần/prompt: bắn ngay khi prompt sẵn sàng thay vì poll cả danh sách
+local function hookPrompt(prompt)
+    if hookedPrompts[prompt] or not prompt:IsA("ProximityPrompt") then return end
+    hookedPrompts[prompt] = true
+
+    local function tryHarvest()
         if not Config.Harvest.Enable then return end
         if hide and hide.Value then return end
-        task.wait(0.05)
-        if prompt:IsA("ProximityPrompt") and prompt.Enabled then
+        if prompt.Enabled then
             task.spawn(Modules.harvestPrompt, prompt)
         end
-    end)
-    -- Fallback polling thưa: bắt các prompt đã có sẵn trước khi script chạy
+    end
+
+    prompt:GetPropertyChangedSignal("Enabled"):Connect(tryHarvest)
+    tryHarvest() -- thử ngay nếu đã sẵn sàng từ trước
+end
+
+for _, prompt in ipairs(CollectionService:GetTagged("HarvestPrompt")) do
+    hookPrompt(prompt)
+end
+CollectionService:GetInstanceAddedSignal("HarvestPrompt"):Connect(hookPrompt)
+CollectionService:GetInstanceRemovedSignal("HarvestPrompt"):Connect(function(prompt)
+    hookedPrompts[prompt] = nil
+    processingPrompts[prompt] = nil
+end)
+
+-- Vòng quét dự phòng, tần suất THẤP (1s thay vì 0.05s) chỉ để vớt các prompt
+-- lỡ bị miss signal (an toàn) — không còn là nguồn tải chính như bản cũ.
+function Modules.harvestLoop()
     while true do
+        task.wait(1)
         if Config.Harvest.Enable and (not hide or not hide.Value) then
             for _, prompt in ipairs(CollectionService:GetTagged("HarvestPrompt")) do
-                if prompt:IsA("ProximityPrompt") and prompt.Enabled then
+                if prompt:IsA("ProximityPrompt") and prompt.Enabled and not processingPrompts[prompt] then
                     task.spawn(Modules.harvestPrompt, prompt)
                 end
             end
         end
-        -- Khi tắt: sleep dài tránh busy-wait
-        task.wait(Config.Harvest.Enable and (Config.Settings["Harvest Delay"] or 0.3) or 2)
     end
 end
 
--- ========== SELL (remote đúng từ GaG2) ==========
+-- ========== SELL: gộp sellLoop + sellFullLoop thành 1 loop duy nhất ==========
+-- "When Full" giờ chủ yếu xử lý event-driven ngay sau harvestPrompt ở trên;
+-- loop này chỉ chạy dự phòng tần suất thấp để không bỏ sót trường hợp nào.
 function Modules.sellLoop()
     while true do
+        task.wait(Config.Settings["Sell Delay"] or 0.3)
         if Config.Sell.Enable then
-            logAction("Auto Sell", "Sold all")
-            Networking.NPCS.SellAll:Fire()
-            task.wait(Config.Settings["Sell Delay"] or 3)
-        else
-            task.wait(3) -- tắt thì sleep dài, không busy-wait
+            fireSellAll("Auto Sell")
         end
-    end
-end
-
-function Modules.sellFullLoop()
-    while true do
-        if Config.Sell["When Full"] then
-            local ok, result = pcall(function()
-                return LP.PlayerGui.BackpackGui.Backpack.Inventory.FruitInventory.Text
-            end)
-            if ok and result then
-                local current, max = result:match("(%d+)/(%d+)")
-                if current and max and tonumber(current) >= tonumber(max) then
-                    logAction("Auto Sell Full", "Backpack full")
-                    Networking.NPCS.SellAll:Fire()
-                    task.wait(2) -- cooldown sau khi bán
-                end
-            end
-            task.wait(1) -- check mỗi 1s thay vì 0.2s
-        else
-            task.wait(3)
-        end
+        checkSellWhenFull()
     end
 end
 
 -- ========== SHOP (Packet ID đúng từ GaG2) ==========
 function Modules.shopLoop()
     while true do
-        local anyActive = Config["Buy Seed"].Enable or Config["Buy Gear"].Enable or Config["Buy Crate"].Enable
-        if not anyActive then
-            task.wait(3) -- không có gì để mua, sleep dài
-            continue
-        end
+        -- Mua Seed: Packet 103
         if Config["Buy Seed"].Enable then
             for name, enabled in pairs(Config["Buy Seed"].Seed) do
                 if enabled then
                     logAction("Buy Seed", name)
                     Packet:FireServer(103, name)
-                    task.wait(0.3)
+                    task.wait(0.2)
                 end
             end
         end
+        -- Mua Gear: Packet 107
         if Config["Buy Gear"].Enable then
             for name, enabled in pairs(Config["Buy Gear"].Gear) do
                 if enabled then
                     logAction("Buy Gear", name)
                     Packet:FireServer(107, name)
-                    task.wait(0.3)
+                    task.wait(0.2)
                 end
             end
         end
+        -- Mua Crate: Packet 103
         if Config["Buy Crate"].Enable then
             for name, enabled in pairs(Config["Buy Crate"].Crate) do
                 if enabled then
                     logAction("Buy Crate", name)
                     Packet:FireServer(103, name)
-                    task.wait(0.3)
+                    task.wait(0.2)
                 end
             end
         end
-        task.wait(1) -- cooldown sau mỗi vòng mua
+        task.wait(0.2)
     end
 end
 
@@ -543,9 +567,6 @@ end
 
 function Modules.autoPlantLoop()
     while true do
-        if not Config["Plant Seed"].Enable then
-            task.wait(2) continue
-        end
         if Config["Plant Seed"].Enable then
             local plotId = LP:GetAttribute("PlotId")
             local plot = plotId and workspace:FindFirstChild("Gardens") and workspace.Gardens:FindFirstChild("Plot" .. plotId)
@@ -634,57 +655,89 @@ function Modules.plantMatchesDestroy(seedName)
     return matchName or matchRarity
 end
 
-function Modules.autoShovelLoop()
+-- ===== EVENT-DRIVEN: thay vì quét lại TOÀN BỘ cây trong Plot mỗi giây,
+-- ta chỉ "bắt" cây MỚI mọc lên (ChildAdded) và đưa vào hàng đợi đào.
+-- Loop bên dưới chỉ còn nhiệm vụ tiêu thụ hàng đợi -> rẻ hơn rất nhiều khi rảnh việc.
+local destroyQueue  = {}
+local destroyQueued = setmetatable({}, { __mode = "k" }) -- chống thêm trùng 1 cây 2 lần
+
+local function queueForDestroy(plant)
+    if not plant or not plant:IsA("Model") then return end
+    local cfg = Config["Destroy Plant"]
+    if not (cfg["By Name"] or cfg["By Rarity"]) then return end
+    if destroyQueued[plant] then return end
+    local seedName = plant:GetAttribute("SeedName")
+    if seedName and Modules.plantMatchesDestroy(seedName) then
+        destroyQueued[plant] = true
+        table.insert(destroyQueue, plant)
+    end
+end
+
+local watchedPlantFolders = setmetatable({}, { __mode = "k" })
+local function watchPlotForDestroy(plot)
+    local plantsFolder = plot and plot:FindFirstChild("Plants")
+    if not plantsFolder or watchedPlantFolders[plantsFolder] then return end
+    watchedPlantFolders[plantsFolder] = true
+    for _, plant in ipairs(plantsFolder:GetChildren()) do
+        queueForDestroy(plant)
+    end
+    plantsFolder.ChildAdded:Connect(queueForDestroy)
+end
+
+local function watchOwnPlotForDestroy()
+    local plotId = LP:GetAttribute("PlotId")
+    local gardens = plotId and workspace:FindFirstChild("Gardens")
+    local plot = gardens and gardens:FindFirstChild("Plot" .. tostring(plotId))
+    if plot then watchPlotForDestroy(plot) end
+end
+watchOwnPlotForDestroy()
+LP:GetAttributeChangedSignal("PlotId"):Connect(watchOwnPlotForDestroy)
+
+-- Vòng quét dự phòng tần suất THẤP (10s) — chỉ để vớt các cây đã mọc từ trước
+-- khi người dùng MỚI bật "By Name"/"By Rarity" lên (ChildAdded không bắt được cây cũ).
+task.spawn(function()
     while true do
+        task.wait(10)
         local cfg = Config["Destroy Plant"]
-        if not cfg["By Name"] and not cfg["By Rarity"] then
-            task.wait(2) continue
-        end
         if cfg["By Name"] or cfg["By Rarity"] then
             local plotId = LP:GetAttribute("PlotId")
-            if plotId then
-                local gardens = workspace:FindFirstChild("Gardens")
-                local plot = gardens and gardens:FindFirstChild("Plot" .. tostring(plotId))
-                if plot then
-                    local plantsFolder = plot:FindFirstChild("Plants")
-                    if plantsFolder then
-                        local candidates = {}
-                        for _, plant in ipairs(plantsFolder:GetChildren()) do
-                            if plant:IsA("Model") then
-                                local seedName = plant:GetAttribute("SeedName")
-                                if seedName and Modules.plantMatchesDestroy(seedName) then
-                                    table.insert(candidates, plant)
-                                end
-                            end
-                        end
-                        if #candidates > 0 then
-                            local shovelTool = Modules.equipShovel()
-                            if shovelTool then
-                                local shovelType = shovelTool:GetAttribute("Shovel")
-                                for _, plant in ipairs(candidates) do
-                                    if not cfg["By Name"] and not cfg["By Rarity"] then break end
-                                    if not plant or not plant.Parent then
-                                        task.wait(Config.Settings["Shovel Delay"] or 0.2)
-                                        continue
-                                    end
-                                    local plantId = plant:GetAttribute("PlantId")
-                                    local seedName = plant:GetAttribute("SeedName") or "plant"
-                                    if plantId and shovelType then
-                                        -- Remote đúng từ GaG2
-                                        pcall(function() Networking.Shovel.UseShovel:Fire(plantId, "", shovelType, shovelTool) end)
-                                        logAction("Auto Destroy", seedName)
-                                    end
-                                    task.wait(Config.Settings["Shovel Delay"] or 0.2)
-                                end
-                            else
-                                print("[Moonlight Hub] Shovel not found in backpack!")
-                            end
-                        end
-                    end
+            local gardens = plotId and workspace:FindFirstChild("Gardens")
+            local plot = gardens and gardens:FindFirstChild("Plot" .. tostring(plotId))
+            local plantsFolder = plot and plot:FindFirstChild("Plants")
+            if plantsFolder then
+                for _, plant in ipairs(plantsFolder:GetChildren()) do
+                    queueForDestroy(plant)
                 end
             end
         end
-        task.wait(1)
+    end
+end)
+
+-- Worker: chỉ đào khi hàng đợi CÓ việc, không còn quét toàn bộ Plot mỗi giây nữa.
+function Modules.autoShovelLoop()
+    while true do
+        local plant = table.remove(destroyQueue, 1)
+        if not plant then
+            task.wait(1) -- không có việc -> nghỉ rẻ, không quét gì cả
+        else
+            destroyQueued[plant] = nil
+            if plant.Parent then
+                local shovelTool = Modules.equipShovel()
+                if shovelTool then
+                    local shovelType = shovelTool:GetAttribute("Shovel")
+                    local plantId  = plant:GetAttribute("PlantId")
+                    local seedName = plant:GetAttribute("SeedName") or "plant"
+                    if plantId and shovelType then
+                        -- Remote đúng từ GaG2
+                        pcall(function() Networking.Shovel.UseShovel:Fire(plantId, "", shovelType, shovelTool) end)
+                        logAction("Auto Destroy", seedName)
+                    end
+                else
+                    print("[Moonlight Hub] Shovel not found in backpack!")
+                end
+            end
+            task.wait(Config.Settings["Shovel Delay"] or 0.2)
+        end
     end
 end
 
@@ -748,31 +801,25 @@ end
 
 function Modules.autoCollectSeedPacksLoop()
     while true do
-        if not Config["Seed Pack"].Enable then
-            task.wait(3) continue
-        end
-        local seeds = getSeedLocations()
-        if #seeds > 0 then
-            for _, seed in ipairs(seeds) do
-                if not Config["Seed Pack"].Enable then break end
-                tpAndFireSeedPrompt(seed)
-                logAction("Seed Pack", "Collected")
-                task.wait(0.3)
+        if Config["Seed Pack"].Enable then
+            local seeds = getSeedLocations()
+            if #seeds > 0 then
+                for _, seed in ipairs(seeds) do
+                    if not Config["Seed Pack"].Enable then break end
+                    tpAndFireSeedPrompt(seed)
+                    logAction("Seed Pack", "Collected")
+                    task.wait(0.3)
+                end
+                Modules.returnToHomePlot()
             end
-            Modules.returnToHomePlot()
-            task.wait(5) -- cooldown sau khi quét xong
-        else
-            task.wait(3) -- không có seed pack, thử lại sau 3s
         end
+        task.wait(1)
     end
 end
 
 -- ========== PET SPAWN (từ GaG2) ==========
 function Modules.autoBuyPetSpawnLoop()
     while true do
-        if not Config["Pet Spawn"].Enable then
-            task.wait(3) continue
-        end
         if Config["Pet Spawn"].Enable then
             local char = LP.Character
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -855,10 +902,8 @@ function Modules.antiAfkLoop()
                 VirtualUser:ClickButton2(Vector2.new(0,0))
             end)
             logAction("Anti AFK", "OK")
-            task.wait(270) -- kick sau 300s, fire trước 30s
-        else
-            task.wait(30) -- check lại sau 30s nếu tắt
         end
+        task.wait(300)
     end
 end
 
@@ -903,17 +948,16 @@ end
 
 function Modules.standCenterLoop()
     while true do
-        if not Config["Stand Center"].Enable then
-            task.wait(3) continue
-        end
-        local center = Modules.getPlotCenter()
-        if center then
-            local char = LP.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            -- Chỉ teleport nếu lệch hơn 2 studs, tránh teleport liên tục
-            if hrp and (hrp.Position - center).Magnitude > 2 then
-                hrp.CFrame = CFrame.new(center)
-                logAction("Stand Center", "Moved to plot center")
+        if Config["Stand Center"].Enable then
+            local center = Modules.getPlotCenter()
+            if center then
+                local char = LP.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                -- Chỉ teleport nếu đã lệch khỏi trung tâm quá 2 studs
+                if hrp and (hrp.Position - center).Magnitude > 2 then
+                    hrp.CFrame = CFrame.new(center)
+                    logAction("Stand Center", "Moved to plot center")
+                end
             end
         end
         task.wait(Config["Stand Center"].Interval or 2)
@@ -1088,10 +1132,25 @@ local function SetValue(key, value)
     local lbl     = entry.lbl
     local newText = entry.prefix .. "<font color='#ffffff'>" .. tostring(value) .. "</font>"
     if lbl.Text == newText then return end
-    local t1 = TweenService2:Create(lbl, TweenInfo.new(0.1), {TextTransparency = 1})
-    t1:Play(); t1.Completed:Wait()
+    -- Không còn Completed:Wait() chặn luồng gọi 0.1s/lần — fade chạy bất đồng bộ.
+    TweenService2:Create(lbl, TweenInfo.new(0.1), {TextTransparency = 1}):Play()
+    task.delay(0.1, function()
+        if lbl.Parent then
+            lbl.Text = newText
+            TweenService2:Create(lbl, TweenInfo.new(0.15), {TextTransparency = 0}):Play()
+        end
+    end)
+end
+
+-- Bản KHÔNG hiệu ứng, dùng cho các giá trị đổi liên tục (tiền, đồng hồ, số seed...)
+-- để tránh tạo Tween + luồng mới mỗi lần cập nhật -> nhẹ hơn nhiều khi gọi dồn dập.
+local function SetValueFast(key, value)
+    local entry = LabelMap[key]
+    if not entry then return end
+    local lbl     = entry.lbl
+    local newText = entry.prefix .. "<font color='#ffffff'>" .. tostring(value) .. "</font>"
+    if lbl.Text == newText then return end
     lbl.Text = newText
-    TweenService2:Create(lbl, TweenInfo.new(0.15), {TextTransparency = 0}):Play()
 end
 
 -- ========== LAYOUT ==========
@@ -1312,108 +1371,141 @@ local function getGardenData()
     return plantCount, plantMax, sprinklerCount, decayCount
 end
 
--- ========== STATS LOOP ==========
--- Tách thành 3 loop riêng với tần suất khác nhau:
---   • Uptime + tiền + fruit/pet : mỗi 3s   (thay đổi nhanh)
---   • Garden (scan cây/sprinkler): mỗi 8s  (scan nặng, không cần realtime)
---   • Status / Stand Center      : mỗi 5s  (hiếm thay đổi)
+-- ========== STATS: EVENT-DRIVEN (chỉ cập nhật khi giá trị THỰC SỰ đổi) ==========
+-- Trước đây: 1 loop quét lại money + fruit + pet + seed + garden MỖI 2 giây,
+-- dù phần lớn thời gian không có gì thay đổi. Giờ mỗi mục tự lắng nghe signal
+-- riêng của nó (GetPropertyChangedSignal / GetAttributeChangedSignal / ChildAdded),
+-- chỉ chạy code khi đúng giá trị đó đổi -> giảm tải đáng kể, không cần "đoán" 2s/lần.
 
--- Loop 1: player stats + tiền (nhẹ)
-task.spawn(function()
-    local prevMoney   = nil
-    local earnRate    = 0
-    local rateHistory = {}
-    while true do
-        task.wait(3)
-        local money, fruitC, fruitM, petC, petM = getPlayerData()
-        SetValue("Sheckles", fmtMoney(money))
-        SetValue("Fruit",    fruitC .. "/" .. fruitM)
-        SetValue("Pets",     petC   .. "/" .. petM)
-        SetValue("Plot",     tostring(LP:GetAttribute("PlotId") or "N/A"))
-        SetValue("Uptime",   fmtTime(tick() - _sessionStart))
+local _rateHistory = {}
+local _prevMoney, _lastMoneyTick = nil, tick()
 
-        if prevMoney then
-            local diff = money - prevMoney
-            if diff > 0 then
-                table.insert(rateHistory, diff / 3)
-                if #rateHistory > 5 then table.remove(rateHistory, 1) end
-                local sum = 0
-                for _, v in ipairs(rateHistory) do sum += v end
-                earnRate = sum / #rateHistory
-                _sessionEarned += diff
-            end
+local function updateMoneyDisplay(money)
+    SetValueFast("Sheckles", fmtMoney(money))
+    local now = tick()
+    if _prevMoney then
+        local dt   = math.max(now - _lastMoneyTick, 0.01)
+        local diff = money - _prevMoney
+        if diff > 0 then
+            table.insert(_rateHistory, diff / dt)
+            if #_rateHistory > 5 then table.remove(_rateHistory, 1) end
+            local sum = 0
+            for _, v in ipairs(_rateHistory) do sum += v end
+            _sessionEarned += diff
+            SetValueFast("Earned", fmtMoney(_sessionEarned))
+            SetValueFast("Rate",   fmtMoney(math.floor(sum / #_rateHistory)) .. "/s")
         end
-        prevMoney = money
-        SetValue("Earned", fmtMoney(_sessionEarned))
-        SetValue("Rate",   fmtMoney(math.floor(earnRate)) .. "/s")
     end
-end)
+    _prevMoney, _lastMoneyTick = money, now
+end
 
--- Loop 2: garden scan (nặng hơn, chạy thưa)
+-- Chạy 1 LẦN (không phải loop lặp vô hạn): chờ leaderstats xuất hiện rồi gắn signal.
 task.spawn(function()
-    while true do
-        task.wait(8)
-        local pC, pM, sC, dC = getGardenData()
-        SetValue("Plants",     pC .. "/" .. pM)
-        SetValue("Sprinklers", tostring(sC))
-        SetValue("Decaying",   tostring(dC))
+    local stats    = LP:WaitForChild("leaderstats", 15)
+    local sheckles = stats and stats:WaitForChild("Sheckles", 15)
+    if sheckles then
+        updateMoneyDisplay(sheckles.Value)
+        sheckles:GetPropertyChangedSignal("Value"):Connect(function()
+            updateMoneyDisplay(sheckles.Value)
+        end)
     end
 end)
 
--- Loop 3: status (nhẹ, ít thay đổi)
+-- Fruit (túi đồ): lắng nghe đúng Text của thanh fruit thay vì đọc lại mỗi 2s.
+task.spawn(function()
+    local function hookFruitLabel()
+        local ok, label = pcall(function()
+            return LP.PlayerGui.BackpackGui.Backpack.Inventory.FruitInventory
+        end)
+        if not ok or not label then return false end
+        local function update()
+            local c, m = label.Text:match("(%d+)/(%d+)")
+            if c then SetValueFast("Fruit", c .. "/" .. m) end
+        end
+        update()
+        label:GetPropertyChangedSignal("Text"):Connect(update)
+        return true
+    end
+    if not hookFruitLabel() then
+        local gui = LP:WaitForChild("PlayerGui", 15)
+        if gui then
+            local conn
+            conn = gui.DescendantAdded:Connect(function()
+                if hookFruitLabel() then conn:Disconnect() end
+            end)
+        end
+    end
+end)
+
+-- Pets: cập nhật khi pet được thêm/bớt hoặc MaxPets đổi, không cần polling.
+task.spawn(function()
+    local function updatePets()
+        local petFolder = LP:FindFirstChild("Pets") or LP:FindFirstChild("OwnedPets")
+        local petCurrent = petFolder and #petFolder:GetChildren() or 0
+        SetValueFast("Pets", petCurrent .. "/" .. tostring(LP:GetAttribute("MaxPets") or 0))
+    end
+    updatePets()
+    local petFolder = LP:FindFirstChild("Pets") or LP:FindFirstChild("OwnedPets")
+    if petFolder then
+        petFolder.ChildAdded:Connect(updatePets)
+        petFolder.ChildRemoved:Connect(updatePets)
+    end
+    LP:GetAttributeChangedSignal("MaxPets"):Connect(updatePets)
+end)
+
+-- Plot: chỉ đổi khi PlotId đổi, không cần polling.
+SetValueFast("Plot", tostring(LP:GetAttribute("PlotId") or "N/A"))
+LP:GetAttributeChangedSignal("PlotId"):Connect(function()
+    SetValueFast("Plot", tostring(LP:GetAttribute("PlotId") or "N/A"))
+end)
+
+-- Những phần KHÔNG có signal riêng để lắng nghe (đếm cây/sprinkler trong Plot,
+-- đồng hồ Uptime) vẫn cần 1 loop, nhưng giờ NHẸ hơn nhiều: không còn money/fruit/
+-- seed/pet trong vòng lặp này nữa, và tần suất giảm 2s -> 5s.
 task.spawn(function()
     while true do
         task.wait(5)
-        SetValue("Stand Center", Config["Stand Center"].Enable and "ON" or "OFF")
+        local pC, pM, sC, dC = getGardenData()
+        SetValueFast("Plants",     pC .. "/" .. pM)
+        SetValueFast("Sprinklers", tostring(sC))
+        SetValueFast("Decaying",   tostring(dC))
+        SetValueFast("Uptime", fmtTime(tick() - _sessionStart))
+        SetValueFast("Stand Center", Config["Stand Center"].Enable and "ON" or "OFF")
     end
 end)
 
--- Watch backpack: debounce 1s để tránh spam khi mua/trồng nhiều seed liên tiếp
-local _seedDirty   = false
-local _seedDebounce = false
-local function flushSeedUpdate()
-    if _seedDebounce then return end
-    _seedDebounce = true
-    task.spawn(function()
-        task.wait(1) -- gộp tất cả thay đổi trong 1s thành 1 lần update
-        if _seedDirty then
-            local counts, total = getSeedCounts()
-            SetValue("Seeds", total .. " total")
-            for k, n in pairs(counts) do SetValue(k, tostring(n)) end
-            _seedDirty = false
-        end
-        _seedDebounce = false
-    end)
-end
-
+-- Watch backpack changes → cập nhật seed ngay
 local function watchContainer(container)
     if not container then return end
     container.ChildAdded:Connect(function(item)
         if SEED_TOOL_MAP[item.Name] then
-            _seedDirty = true
-            flushSeedUpdate()
+            task.wait(0.05)
+            local counts, total = getSeedCounts()
+            SetValueFast("Seeds", total .. " total")
+            for k, n in pairs(counts) do SetValueFast(k, tostring(n)) end
         end
     end)
     container.ChildRemoved:Connect(function(item)
         if SEED_TOOL_MAP[item.Name] then
-            _seedDirty = true
-            flushSeedUpdate()
+            task.wait(0.05)
+            local counts, total = getSeedCounts()
+            SetValueFast("Seeds", total .. " total")
+            for k, n in pairs(counts) do SetValueFast(k, tostring(n)) end
         end
     end)
 end
 
--- Cập nhật seed lần đầu khi load
-task.spawn(function()
-    task.wait(2)
+-- Khởi tạo hiển thị Seeds 1 LẦN lúc load (sau đó watchContainer phía trên
+-- sẽ tự cập nhật mỗi khi túi đồ thay đổi, không cần polling).
+do
     local counts, total = getSeedCounts()
-    SetValue("Seeds", total .. " total")
-    for k, n in pairs(counts) do SetValue(k, tostring(n)) end
-end)
+    SetValueFast("Seeds", total .. " total")
+    for seedName, n in pairs(counts) do SetValueFast(seedName, tostring(n)) end
+end
 
 watchContainer(LP:FindFirstChildOfClass("Backpack"))
 LP.CharacterAdded:Connect(function(char)
     watchContainer(char)
-    task.wait(1)
     watchContainer(LP:FindFirstChildOfClass("Backpack"))
 end)
 
@@ -1422,7 +1514,6 @@ end)
 -- ============================================================
 task.spawn(Modules.harvestLoop)
 task.spawn(Modules.sellLoop)
-task.spawn(Modules.sellFullLoop)
 task.spawn(Modules.shopLoop)
 task.spawn(Modules.autoPlantLoop)
 task.spawn(Modules.autoShovelLoop)
